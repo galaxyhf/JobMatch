@@ -1,0 +1,15 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.env*
+!.env.example
+playwright-report/
+test-results/
+.taste-skill/
+
+.pnpm-store/
+.vercel/
+.DS_Store
+*.pem
+*.key
