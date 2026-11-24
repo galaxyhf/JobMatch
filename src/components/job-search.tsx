@@ -7,9 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, requestJson } from "@/lib/client";
 import { passesFilters, sortResults, type SortOption } from "@/lib/jobs/filters";
+import { linkedinSearchUrl } from "@/lib/jobs/linkedin";
 import type { SearchPage, SearchResponse } from "@/lib/jobs/providers";
 import { compareResume } from "@/lib/matching";
-import { emptyPreferences, sourceNames, type Preferences } from "@/lib/schema";
+import { emptyPreferences, publicationPeriodNames, publicationPeriods, sourceNames, type Preferences } from "@/lib/schema";
 import { JobAnalysis } from "./job-analysis";
 import { JobCard } from "./job-card";
 import { countFilters, JobFilters } from "./job-filters";
@@ -39,7 +40,7 @@ function useDebounced<T>(value:T, delay:number) {
     const timer = window.setTimeout(()=>setDebounced(value),delay);
     return ()=>window.clearTimeout(timer);
   },[value,delay]);
-  return debounced;
+  return [debounced,setDebounced] as const;
 }
 
 export function SearchShell() {
@@ -73,7 +74,8 @@ function CatalogSearch() {
   const [version,setVersion] = useState(0);
   const [sort,setSort] = useState<SortOption>("match");
   const [visible,setVisible] = useState(pageSize);
-  const filters = useDebounced(preferences,250);
+  const [filters,applyFilters] = useDebounced(preferences,250);
+  const [destination,setDestination] = useState<"catalog"|"linkedin">("catalog");
   const sourceKeys = [...filters.sources].sort();
   const query = useQuery({
     queryKey:["jobs","catalog",...sourceKeys],
@@ -106,12 +108,33 @@ function CatalogSearch() {
 
   return (
     <>
-      <div className="search-bar">
-        <Search size={21} aria-hidden="true"/>
-        <input type="search" aria-label="Buscar por palavra-chave" placeholder="Busque por cargo, empresa ou palavra-chave" maxLength={300}
-          value={preferences.keywords} onChange={e=>update({...preferences,keywords:e.target.value})}/>
-        {preferences.keywords && <Button variant="ghost" size="icon" aria-label="Limpar pesquisa" onClick={()=>update({...preferences,keywords:""})}><X size={17}/></Button>}
-      </div>
+      <form className="search-bar" role="search" aria-label="Busca de vagas" onSubmit={event=>{
+        event.preventDefault();
+        if (destination==="linkedin") {
+          window.open(linkedinSearchUrl(preferences),"_blank","noopener,noreferrer");
+          return;
+        }
+        applyFilters(preferences);
+        setVisible(pageSize);
+      }}>
+        <div className="search-input">
+          <Search size={21} aria-hidden="true"/>
+          <input type="search" aria-label="Buscar por palavra-chave" placeholder="Busque por cargo, empresa ou palavra-chave" maxLength={300}
+            value={preferences.keywords} onChange={e=>update({...preferences,keywords:e.target.value})}/>
+          {preferences.keywords && <Button variant="ghost" size="icon" aria-label="Limpar pesquisa" onClick={()=>update({...preferences,keywords:""})}><X size={17}/></Button>}
+        </div>
+        <div className="search-options">
+          <select aria-label="Onde buscar" value={destination} onChange={e=>setDestination(e.target.value==="linkedin" ? "linkedin" : "catalog")}>
+            <option value="catalog">JobMatch</option><option value="linkedin">LinkedIn</option>
+          </select>
+          <select aria-label="Tempo de publicação" value={preferences.publicationPeriod}
+            onChange={e=>update({...preferences,publicationPeriod:e.target.value as Preferences["publicationPeriod"]})}>
+            <option value="">Qualquer data</option>
+            {publicationPeriods.map(period=><option key={period} value={period}>{publicationPeriodNames[period]}</option>)}
+          </select>
+          <Button size="sm" type="submit" aria-label={destination==="linkedin" ? "Buscar no LinkedIn em nova aba" : undefined}>Buscar</Button>
+        </div>
+      </form>
       <div className="results-layout">
         <JobFilters value={preferences} onChange={update} version={version} onClear={()=>setVersion(previous=>previous+1)}/>
         <section className="results-main" aria-label="Resultados">
@@ -133,6 +156,7 @@ function CatalogSearch() {
               <Button size="sm" variant="outline" disabled={query.isFetching} onClick={()=>query.refetch()}>{query.isFetching ? "Tentando…" : "Tentar novamente"}</Button>
             </div>
           </div>}
+          {filters.publicationPeriod && <p className="sort-note">O período inclui vagas com data de publicação informada pela fonte.</p>}
           {sort==="salary" && <p className="sort-note">Valores convertidos para escala anual quando o período está informado. Moedas são ordenadas separadamente.</p>}
           {!resume && !query.isPending && !allOffline && !query.isError && <div className="callout resume-reminder">
             <FileText size={18}/><p><Link href="/curriculo">Confirme seu currículo</Link> para ver a compatibilidade de cada vaga.</p>

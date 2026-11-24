@@ -27,6 +27,9 @@ export const seniorityNames = { intern:"Estágio", junior:"Júnior", mid:"Pleno"
 export const languageNames = {pt:"Português", en:"Inglês", es:"Espanhol", fr:"Francês", de:"Alemão", it:"Italiano", ja:"Japonês", zh:"Mandarim"};
 export const employmentNames = {fulltime:"Tempo integral", parttime:"Tempo parcial", intern:"Estágio", contract:"Contrato", temporary:"Temporário", clt:"CLT", pj:"PJ"};
 export const salaryIntervals = ["year", "month", "week", "day", "hour"] as const;
+export const publicationPeriods = ["day", "week", "month"] as const;
+export const publicationPeriodSeconds = {day:86_400, week:604_800, month:2_592_000};
+export const publicationPeriodNames = {day:"Últimas 24 horas", week:"Últimos 7 dias", month:"Últimos 30 dias"};
 const countries = z.string().regex(/^[A-Z]{2}$/);
 const currency = z.string().regex(/^[A-Z]{3}$/);
 const externalUrl = z.string().trim().max(2048).refine(safeExternalUrl, "Informe um link HTTPS válido.");
@@ -40,6 +43,7 @@ export const preferencesSchema = z.object({
   salaryMin: z.number().nonnegative().max(1e9).nullable().default(null),
   currency: z.union([currency,z.literal("")]).default(""),
   salaryInterval: z.enum(salaryIntervals).or(z.literal("")).default(""),
+  publicationPeriod: z.enum(publicationPeriods).or(z.literal("")).default(""),
   language: z.enum(["pt","en","es","fr","de","it","ja","zh"]).or(z.literal("")).default(""),
   sources: z.array(z.enum(providers)).max(3).default([]),
   minMatch: z.number().int().min(0).max(100).default(0),

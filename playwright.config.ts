@@ -15,7 +15,7 @@ export default defineConfig({
     trace:"retain-on-failure",
   },
   webServer:process.env.JOBMATCH_TEST_URL ? undefined : {
-    command:`pnpm dev --hostname 127.0.0.1 --port ${port}`,
+    command:`node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port ${port}`,
     url:baseURL,
     reuseExistingServer:!process.env.CI,
     timeout:60_000,

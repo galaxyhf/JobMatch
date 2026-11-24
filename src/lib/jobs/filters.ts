@@ -1,4 +1,4 @@
-import type { Job, Preferences } from "../schema";
+import { publicationPeriodSeconds, type Job, type Preferences } from "../schema";
 import { technologyKey, terms } from "../terms";
 import { fold } from "../utils";
 
@@ -11,7 +11,12 @@ function includesTerms(text: string, query: string) {
   return words.length > 0 ? words.every(word=>haystack.has(word)) : fold(text).includes(fold(query));
 }
 
-export function passesFilters(job: Job, filters: Preferences) {
+export function passesFilters(job: Job, filters: Preferences, now = Date.now()) {
+  if (filters.publicationPeriod) {
+    const published = job.publishedAt ? Date.parse(job.publishedAt) : NaN;
+    const earliest = now - publicationPeriodSeconds[filters.publicationPeriod] * 1000;
+    if (!(published >= earliest && published <= now)) return false;
+  }
   if (filters.role && !includesTerms(job.title,filters.role)) return false;
   if (filters.keywords && !includesTerms([job.title,job.company,job.location,job.description].join(" "),filters.keywords)) return false;
   if (filters.technologies.length) {

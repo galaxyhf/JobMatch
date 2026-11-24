@@ -5,7 +5,7 @@ import { fixtureJob } from "../fixtures/jobs";
 const fixture = (name:string) => path.join(process.cwd(),"src/tests/fixtures",name);
 
 async function mockCatalog(page:Page) {
-  const other = {...fixtureJob,id:"greenhouse:global:empresa-teste:90211",title:"Analista de suporte",company:"Outro quadro",
+  const other = {...fixtureJob,id:"greenhouse:global:empresa-teste:90211",title:"Analista de suporte",company:"Outro quadro",publishedAt:new Date(Date.now()-3600_000).toISOString(),
     applicationUrl:"https://example.com/vagas/90211",required:[],requirements:[],technologies:["Excel"]};
   await page.route("**/api/jobs/search?*",async route=>{
     const url = new URL(route.request().url());
@@ -67,11 +67,45 @@ test("trata PDF sem texto e extrai um DOCX em nova tentativa",async ({page})=>{
   await expect(page.getByLabel("Nome",{exact:true})).toHaveValue("Ana Ribeiro");
 });
 
-test("oferece análise manual quando um link não tem integração",async ({page})=>{
+test("abre a busca do LinkedIn em outra aba com os termos informados",async ({page,context})=>{
+  await mockCatalog(page);
+  await context.route("https://www.linkedin.com/jobs/search/**",route=>route.fulfill({body:"Resultado externo de teste"}));
+  await page.goto("/vagas");
+  await page.getByRole("searchbox").fill("Engenharia de Dados & BI");
+  await page.getByLabel("Cargo desejado").fill("Analista");
+  await page.getByLabel("Cidade",{exact:true}).fill("São Paulo");
+  const search = page.getByRole("search",{name:"Busca de vagas"});
+  await search.getByLabel("Onde buscar").selectOption("linkedin");
+  await search.getByLabel("Tempo de publicação").selectOption("week");
+  const [popup] = await Promise.all([page.waitForEvent("popup"),search.getByRole("button",{name:"Buscar no LinkedIn em nova aba"}).click()]);
+  await popup.waitForLoadState();
+  const target = new URL(popup.url());
+  expect(target.origin+target.pathname).toBe("https://www.linkedin.com/jobs/search/");
+  expect(target.searchParams.get("keywords")).toBe("Analista Engenharia de Dados & BI");
+  expect(target.searchParams.get("location")).toBe("São Paulo");
+  expect(target.searchParams.get("f_TPR")).toBe("r604800");
+  await popup.close();
+});
+
+test("filtra o catálogo pelo tempo de publicação na mesma barra de busca",async ({page})=>{
+  await mockCatalog(page);
+  await page.goto("/vagas");
+  await expect(page.getByText("2 vagas encontradas")).toBeVisible();
+  const period = page.getByLabel("Tempo de publicação");
+  await period.selectOption("day");
+  await expect(page.getByText("1 vaga encontrada")).toBeVisible();
+  await expect(page.getByRole("link",{name:"Analista de suporte"})).toBeVisible();
+  await expect(page.getByRole("link",{name:fixtureJob.title})).toHaveCount(0);
+  await period.selectOption("");
+  await expect(page.getByText("2 vagas encontradas")).toBeVisible();
+});
+
+test("mostra o campo de descrição ao colar o link de uma vaga do LinkedIn",async ({page})=>{
   await page.goto("/vagas?modo=link");
   await page.getByLabel("Link da vaga").fill("https://www.linkedin.com/jobs/view/123");
+  await expect(page.getByLabel("Descrição da vaga")).toBeVisible();
   await page.getByRole("button",{name:"Analisar vaga",exact:true}).click();
-  await expect(page.getByRole("alert").filter({hasText:"Cole a descrição da vaga"})).toBeVisible();
+  await expect(page.getByRole("alert").filter({hasText:"Cole a descrição da vaga do LinkedIn"})).toBeVisible();
   await page.getByLabel("Cargo").fill("Analista de dados");
   await page.getByLabel("Empresa").fill("Empresa de Teste");
   await page.getByLabel("Descrição da vaga").fill("Responsabilidades:\nPreparar relatórios operacionais.\nRequisitos:\nExperiência com SQL e Python.");

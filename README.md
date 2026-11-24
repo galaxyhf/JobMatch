@@ -26,7 +26,9 @@ Abra [localhost:3000](http://localhost:3000). A busca precisa de acesso à inter
 | Lever | CI&T e Binance | GET público por identificador do quadro, com parâmetros de paginação |
 | Ashby | Linear, Supabase e Webflow | GET público por identificador do quadro, incluindo remuneração quando publicada |
 
-Esses quadros cobrem vagas no Brasil e no exterior. A disponibilidade, as modalidades e as condições de contratação mudam conforme os anúncios. A busca é limitada ao catálogo configurado. Para um link no domínio oficial de Greenhouse, Lever ou Ashby, o JobMatch também tenta resolver quadros fora do catálogo. Links de outros portais, inclusive LinkedIn, Indeed e Gupy, podem ser usados junto ao texto colado pelo usuário.
+Esses quadros cobrem vagas no Brasil e no exterior. A disponibilidade, as modalidades e as condições de contratação mudam conforme os anúncios. A busca é limitada ao catálogo configurado. Para um link no domínio oficial de Greenhouse, Lever ou Ashby, o JobMatch também tenta resolver quadros fora do catálogo. Links de outros portais, inclusive Indeed e Gupy, podem ser usados junto ao texto colado pelo usuário.
+
+**LinkedIn.** Em **Explorar vagas**, escolha **LinkedIn** na barra de busca e clique em **Buscar** para abrir a plataforma em outra aba. O link leva o cargo, as palavras-chave, a localização e o período de publicação selecionados. Os resultados aparecem no LinkedIn. Para comparar um anúncio, cole o link e a descrição em **Analisar vaga por link**. O currículo fica no JobMatch durante a busca externa.
 
 ### Configurar ou adicionar um quadro
 
@@ -50,6 +52,7 @@ O serviço limita downloads externos a 8 MiB por resposta e aplica timeout de 6,
 - **Países, modalidades, senioridades e fontes** aceitam múltipla seleção com **OU** dentro de cada grupo. Os demais filtros combinam com **E**. Cidade e empresa aceitam parte do nome. Idiomas representam menções identificadas nos requisitos.
 - **Remoto** indica modalidade. A elegibilidade geográfica é avaliada separadamente usando localizações e restrições explícitas. Para o filtro Brasil, vagas remotas sem evidência geográfica ficam de fora. A descrição original é a referência para as condições de contratação.
 - **Remuneração** usa valores publicados com moeda. O filtro de salário mínimo compara o piso anunciado no período selecionado. Para ordenar, os períodos conhecidos são convertidos para uma escala anual com fatores aproximados de 12 meses, 52 semanas, 260 dias ou 2.080 horas. Moedas ficam em grupos separados, sem conversão cambial. Remuneração de período indefinido aparece nos detalhes e fica fora da ordenação salarial.
+- **Tempo de publicação** filtra pelas últimas 24 horas, 7 dias ou 30 dias. Com um período ativo, só entram no catálogo vagas com data de publicação conhecida.
 - **Compatibilidade mínima** exige currículo confirmado e evidência suficiente para pontuar a vaga. É possível limpar os filtros e escolher se as preferências devem ser lembradas pelo navegador.
 
 A pontuação determinística de 0 a 100 é estimada em `src/lib/matching.ts`, com pesos configuráveis em `matchWeights`. Ela combina habilidades (26), cargo (17), senioridade (8), experiência (9), formação (7), idiomas (8), localização (7), modalidade (5), requisitos obrigatórios (18) e desejáveis (5). O cálculo normaliza pelo total dos pesos aplicáveis, penaliza requisitos avaliáveis sem evidência e considera restrição geográfica quando há dados para a comparação. Anos aproximados vêm de períodos informados ou de uma menção no resumo, e não comprovam tempo de experiência em uma tecnologia específica. O resultado estima aderência textual e a tela explica os critérios utilizados. Os campos revisados são a referência da comparação.

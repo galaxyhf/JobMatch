@@ -4,8 +4,9 @@ import { useMutation } from "@tanstack/react-query";
 import { ArrowRight, ClipboardPaste, Info, Link2, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { ApiError, requestJson } from "@/lib/client";
+import { isLinkedInJobUrl } from "@/lib/jobs/linkedin";
 import { analysisSchema, type Job } from "@/lib/schema";
 import { useSession } from "./session";
 import { Button } from "./ui/button";
@@ -20,8 +21,10 @@ interface Form {
 export function JobAnalysis() {
   const {selectJob,resume} = useSession();
   const router = useRouter();
-  const {register,handleSubmit,setError,formState:{errors},clearErrors} = useForm<Form>();
+  const {control,register,handleSubmit,setError,formState:{errors},clearErrors} = useForm<Form>({defaultValues:{url:""}});
   const [manual,setManual] = useState(false);
+  const linkedIn = isLinkedInJobUrl(useWatch({control,name:"url"}));
+  const showDescription = manual || linkedIn;
   const mutation = useMutation({
     gcTime:0,
     mutationFn: (data:unknown) => requestJson<{job:Job}>("/api/jobs/analyze",{
@@ -43,6 +46,10 @@ export function JobAnalysis() {
       setError(field ?? (manual ? "description" : "url"),{message:issue.message},{shouldFocus:true});
       return;
     }
+    if (linkedIn && !valid.data.description) {
+      setError("description",{message:"Cole a descrição da vaga do LinkedIn para continuar."},{shouldFocus:true});
+      return;
+    }
     mutation.mutate(valid.data);
   });
 
@@ -50,15 +57,15 @@ export function JobAnalysis() {
     <section className="panel analysis-panel">
       <div className="analysis-symbol"><Link2 size={25}/></div>
       <h2>Analisar vaga por link</h2>
-      <p className="muted">Use um link de Greenhouse, Lever ou Ashby. Para outras plataformas, cole a descrição da vaga.</p>
+      <p className="muted">Use um link de Greenhouse, Lever ou Ashby. Para vagas do LinkedIn e de outros portais, cole a descrição do anúncio.</p>
       {!resume && <div className="callout compact"><Info size={17}/><p>Com um currículo confirmado, você também verá a compatibilidade.</p></div>}
       <form className="analysis-form" onSubmit={submit} noValidate>
-        <label className="field">Link da vaga {manual && <span className="muted">(opcional)</span>}
+        <label className="field">Link da vaga {manual && !linkedIn && <span className="muted">(opcional)</span>}
           <input type="url" placeholder="https://…" maxLength={2048} {...register("url")} aria-invalid={Boolean(errors.url)}/>
           {errors.url && <span className="field-error" role="alert">{errors.url.message}</span>}
         </label>
         {mutation.error && <p role="alert" className="field-error">{mutation.error.message}</p>}
-        {manual && <>
+        {showDescription && <>
           <div className="form-grid">
             <label className="field">Cargo <span className="muted">(opcional)</span><input maxLength={300} {...register("title")}/></label>
             <label className="field">Empresa <span className="muted">(opcional)</span><input maxLength={300} {...register("company")}/></label>
@@ -73,7 +80,7 @@ export function JobAnalysis() {
           <Button type="submit" disabled={mutation.isPending}>
             {mutation.isPending ? <><LoaderCircle className="spinner" size={17}/> Analisando…</> : <>Analisar vaga <ArrowRight size={17}/></>}
           </Button>
-          {!manual && <Button variant="outline" onClick={()=>{setManual(true);mutation.reset();clearErrors();}}><ClipboardPaste size={17}/> Colar descrição</Button>}
+          {!showDescription && <Button variant="outline" onClick={()=>{setManual(true);mutation.reset();clearErrors();}}><ClipboardPaste size={17}/> Colar descrição</Button>}
         </div>
       </form>
     </section>

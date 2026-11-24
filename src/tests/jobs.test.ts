@@ -62,6 +62,22 @@ describe("deduplicação, paginação e filtros",()=>{
     expect(passesFilters(fixtureJob,{...filter,keywords:"equipe"})).toBe(false);
   });
 
+  it("compara a publicação com o período, excluindo datas ausentes ou futuras",()=>{
+    const now = Date.parse("2026-11-23T12:00:00.000Z");
+    const day = preferencesSchema.parse({publicationPeriod:"day"});
+    const week = preferencesSchema.parse({publicationPeriod:"week"});
+    const boundary = {...fixtureJob,publishedAt:"2026-11-22T12:00:00.000Z"};
+    const older = {...fixtureJob,publishedAt:"2026-11-21T12:00:00.000Z"};
+    const future = {...fixtureJob,publishedAt:"2026-11-24T12:00:00.000Z"};
+    expect(passesFilters(boundary,day,now)).toBe(true);
+    expect(passesFilters(older,day,now)).toBe(false);
+    expect(passesFilters(older,week,now)).toBe(true);
+    expect(passesFilters(future,day,now)).toBe(false);
+    expect(passesFilters(fixtureJob,day,now)).toBe(false);
+    expect(passesFilters(fixtureJob,emptyPreferences,now)).toBe(true);
+    expect(preferencesSchema.safeParse({publicationPeriod:"year"}).success).toBe(false);
+  });
+
   it("ordena salário em escala comparável por moeda",()=>{
     const jobs = [
       {job:{...fixtureJob,id:"a",salaryMin:10000,salaryCurrency:"BRL",salaryInterval:"month" as const},match:null},
