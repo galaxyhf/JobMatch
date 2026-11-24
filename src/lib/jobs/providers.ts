@@ -3,6 +3,8 @@ import { boundedBytes, HttpError } from "../http";
 import type { Job, Preferences } from "../schema";
 import { safeExternalUrl } from "../utils";
 import { boardKey, boardSchema, catalog, type Board } from "./catalog";
+import { linkedInSearchSchema, type LinkedInSearch } from "./linkedin";
+import { isLinkedInHost, linkedInListUrl, linkedInPostingUrl, parseLinkedInDetail, parseLinkedInList } from "./linkedin-public";
 import { deduplicate, normalizeJob } from "./normalize";
 
 const maxResponse = 8 * 1024 * 1024;
@@ -69,16 +71,28 @@ async function acquireSlot(signal: AbortSignal) {
   });
 }
 
-async function fetchProvider(url: string, deadline = AbortSignal.timeout(12_000)) {
-  if (!apiHosts.has(new URL(url).hostname)) throw new Error("Provider host");
+async function fetchPublic(url: string, deadline: AbortSignal, linkedInId?: string) {
+  const host = new URL(url).hostname;
+  const linkedIn = isLinkedInHost(host);
+  const key = linkedIn ? "linkedin.com" : host;
+  if (!linkedIn && !apiHosts.has(key)) throw new Error("Provider host");
   await acquireSlot(deadline);
   try {
-    const key = new URL(url).hostname;
     const blockedUntil = cooldown.get(key) ?? 0;
     if (blockedUntil > Date.now()) throw new HttpError(429,"PROVIDER_RATE","Limite temporário da fonte.");
-    const response = await fetch(url, {
-      redirect:"error", cache:"no-store", headers:{Accept:"application/json"}, signal:AbortSignal.any([deadline,AbortSignal.timeout(timeout)]),
-    });
+    const options = {
+      cache:"no-store",headers:{Accept:linkedIn ? "text/html" : "application/json"},
+      signal:AbortSignal.any([deadline,AbortSignal.timeout(timeout)]),
+    } as const;
+    let response = await fetch(url,{...options,redirect:linkedInId ? "manual" : "error"});
+    if (linkedInId && [301,302,303,307,308].includes(response.status)) {
+      const location = response.headers.get("location");
+      await response.body?.cancel().catch(()=>undefined);
+      const redirected = location && linkedInPostingUrl(linkedInId,location);
+      if (!redirected) throw new Error("LinkedIn redirect");
+      url = redirected;
+      response = await fetch(url,{...options,redirect:"error"});
+    }
     if (!response.ok) {
       await response.body?.cancel().catch(()=>undefined);
       if (response.status === 429) {
@@ -90,13 +104,18 @@ async function fetchProvider(url: string, deadline = AbortSignal.timeout(12_000)
       }
       throw new HttpError(response.status,"PROVIDER_HTTP","A fonte não retornou os dados da vaga.");
     }
-    const data = await boundedBytes(response,maxResponse);
-    return JSON.parse(new TextDecoder().decode(data)) as unknown;
+    const data = await boundedBytes(response,linkedIn ? 1024*1024 : maxResponse);
+    return {body:new TextDecoder().decode(data),url};
   } finally {
     const next = waiters.shift();
     if (next) next();
     else active--;
   }
+}
+
+async function fetchProvider(url: string, deadline = AbortSignal.timeout(12_000)) {
+  const {body} = await fetchPublic(url,deadline);
+  return JSON.parse(body) as unknown;
 }
 
 async function listRows(board: Board, connector: Connector) {
@@ -141,14 +160,75 @@ function fetchBoard(board: Board) {
   return task;
 }
 
-export type BoardStatus = { source: Board["source"]; company: string; status:"ok"|"stale"|"error"; count:number };
+export type BoardStatus = { source: Preferences["sources"][number]; company: string; status:"ok"|"stale"|"error"; count:number };
 export interface SearchResponse { jobs: Job[]; boards: BoardStatus[]; partial: boolean }
 export interface SearchPage extends SearchResponse { next: string | null; snapshot: string }
 
+const linkedInSearchCache = new Map<string,{jobs:Job[];freshUntil:number;staleUntil:number}>();
+const linkedInSearchPending = new Map<string,Promise<Job[]>>();
+const linkedInDetails = new Map<string,{job:Job;freshUntil:number}>();
+
+function remember<K,V>(entries: Map<K,V>, key: K, value: V, capacity: number) {
+  entries.delete(key);
+  entries.set(key,value);
+  if (entries.size>capacity) entries.delete(entries.keys().next().value!);
+}
+
+async function fetchLinkedIn(search: LinkedInSearch) {
+  const url = linkedInListUrl(search);
+  const cached = linkedInSearchCache.get(url);
+  const base = {source:"linkedin",company:"LinkedIn"} as const;
+  try {
+    let jobs = cached?.jobs;
+    if (!cached || cached.freshUntil<=Date.now()) {
+      let task = linkedInSearchPending.get(url);
+      if (!task) {
+        task = fetchPublic(url,AbortSignal.timeout(timeout))
+          .then(({body})=>{
+            const jobs = parseLinkedInList(body);
+            const now = Date.now();
+            remember(linkedInSearchCache,url,{jobs,freshUntil:now+cacheDuration,staleUntil:now+staleDuration},48);
+            return jobs;
+          }).finally(()=>linkedInSearchPending.delete(url));
+        linkedInSearchPending.set(url,task);
+      }
+      jobs = await task;
+    }
+    const results = (jobs ?? []).map(job=>{
+      const detail = linkedInDetails.get(job.externalId);
+      return detail && detail.freshUntil>Date.now() ? {...detail.job,publishedAt:job.publishedAt ?? detail.job.publishedAt} : job;
+    });
+    return {jobs:results,status:{...base,status:"ok",count:results.length} satisfies BoardStatus};
+  } catch {
+    const jobs = cached && cached.staleUntil>Date.now() ? cached.jobs : undefined;
+    return {jobs:jobs ?? [],status:{...base,status:jobs ? "stale" : "error",count:jobs?.length ?? 0} satisfies BoardStatus};
+  }
+}
+
+async function getLinkedInJob(id: string) {
+  const cached = linkedInDetails.get(id);
+  if (cached && cached.freshUntil>Date.now()) return cached.job;
+  const summary = [...linkedInSearchCache.values()].reverse()
+    .filter(entry=>entry.staleUntil>Date.now()).flatMap(entry=>entry.jobs).find(job=>job.externalId===id);
+  const url = linkedInPostingUrl(id,summary?.sourceUrl ?? undefined);
+  if (!url) return null;
+  try {
+    const response = await fetchPublic(url,AbortSignal.timeout(12_000),id);
+    const job = parseLinkedInDetail(response.body,id,response.url,summary);
+    remember(linkedInDetails,id,{job,freshUntil:Date.now()+cacheDuration},120);
+    return job;
+  } catch (error) {
+    if (error instanceof HttpError && [404,410].includes(error.status)) return null;
+    if (summary) return summary;
+    throw new HttpError(503,"PROVIDER_UNAVAILABLE","O LinkedIn não retornou os detalhes da vaga. Tente novamente mais tarde.");
+  }
+}
+
 const attempts = new Map<string,number>();
-export async function fetchCatalog(sources: Preferences["sources"]): Promise<SearchResponse> {
+export async function fetchCatalog(sources: Preferences["sources"], search = linkedInSearchSchema.parse({})): Promise<SearchResponse> {
   const boards = catalog().filter(board => !sources.length || sources.includes(board.source));
-  const results = await Promise.all(boards.map(async board => {
+  const linkedInResult = !sources.length || sources.includes("linkedin") ? fetchLinkedIn(search) : null;
+  const boardResults = boards.map(async board => {
     const key = boardKey(board);
     const base = {source:board.source,company:board.company};
     try {
@@ -161,9 +241,21 @@ export async function fetchCatalog(sources: Preferences["sources"]): Promise<Sea
       const jobs = stored && stored.staleUntil > Date.now() ? stored.jobs : undefined;
       return {jobs:jobs ?? [],status:{...base,status:jobs ? "stale" : "error",count:jobs?.length ?? 0} satisfies BoardStatus};
     }
-  }));
-  const statuses = results.map(result=>result.status);
-  return {jobs:deduplicate(results.flatMap(result=>result.jobs)),boards:statuses,partial:statuses.some(board=>board.status !== "ok")};
+  });
+  const [results,linkedIn] = await Promise.all([
+    Promise.all(boardResults),
+    linkedInResult,
+  ]);
+  const statuses: BoardStatus[] = results.map(result=>result.status);
+  if (linkedIn) statuses.push(linkedIn.status);
+  const boardJobs = results.flatMap(result=>result.jobs);
+  const linkedInJobs = linkedIn?.jobs ?? [];
+  // Interleave the list before the UI applies the selected sort.
+  const jobs = deduplicate([
+    ...linkedInJobs.flatMap((job,index)=>[...boardJobs.slice(index,index+1),job]),
+    ...boardJobs.slice(linkedInJobs.length),
+  ]);
+  return {jobs,boards:statuses,partial:statuses.some(board=>board.status !== "ok")};
 }
 
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -231,6 +323,8 @@ export async function jobFromUrl(input: string) {
 const detailId = z.string().max(300).regex(/^(?:greenhouse|lever|ashby):(?:global|eu):[a-z0-9_-]+:[a-z0-9-]+$/);
 
 export async function getCatalogJob(value: string) {
+  const linkedInId = value.match(/^linkedin:(\d{1,18})$/)?.[1];
+  if (linkedInId) return getLinkedInJob(linkedInId);
   if (!detailId.safeParse(value).success) return null;
   const [source,region,slug,id] = value.split(":");
   const board = catalog().find(item=>item.source === source && item.region === region && item.slug.toLowerCase() === slug);

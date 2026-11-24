@@ -25,9 +25,9 @@ export default function HomePage() {
           </div>
           <div className="hero-upload" data-enter><ResumeUpload/></div>
           <div className="source-strip">
-            <span>Vagas de quadros públicos</span>
-            <div className="source-wordmarks" aria-label="Greenhouse, Lever e Ashby">
-              <span>Greenhouse</span><span>Lever</span><span>Ashby</span>
+            <span>Fontes de vagas</span>
+            <div className="source-wordmarks" aria-label="Greenhouse, Lever, Ashby e LinkedIn">
+              <span>Greenhouse</span><span>Lever</span><span>Ashby</span><span>LinkedIn</span>
             </div>
           </div>
         </div>

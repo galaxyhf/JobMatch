@@ -13,7 +13,7 @@ export default function PrivacyPage() {
         <h2>Leitura do arquivo</h2>
         <p>O arquivo é enviado ao servidor do JobMatch para extrair o texto. O processamento ocorre em memória e o arquivo é descartado ao fim da solicitação.</p>
         <h2>Dados da sessão</h2>
-        <p>O currículo revisado e a pontuação de compatibilidade ficam na memória desta aba. Recarregar a página ou fechar a aba encerra essa sessão. Greenhouse, Lever e Ashby recebem somente consultas de vagas públicas.</p>
+        <p>O currículo revisado e a pontuação de compatibilidade ficam na memória desta aba. Recarregar a página ou fechar a aba encerra essa sessão. Greenhouse, Lever e Ashby recebem consultas aos quadros públicos. O LinkedIn recebe os termos de busca e filtros de vagas aplicáveis.</p>
         <h2>Preferências e candidaturas</h2>
         <p>As preferências são gravadas localmente apenas quando você ativa essa opção no painel de filtros. Ao marcar uma candidatura, o navegador guarda o identificador da vaga. Você pode desmarcá-la nos detalhes da vaga.</p>
         <h2>Links externos</h2>

@@ -67,24 +67,32 @@ test("trata PDF sem texto e extrai um DOCX em nova tentativa",async ({page})=>{
   await expect(page.getByLabel("Nome",{exact:true})).toHaveValue("Ana Ribeiro");
 });
 
-test("abre a busca do LinkedIn em outra aba com os termos informados",async ({page,context})=>{
-  await mockCatalog(page);
-  await context.route("https://www.linkedin.com/jobs/search/**",route=>route.fulfill({body:"Resultado externo de teste"}));
+test("mostra vagas do LinkedIn na busca principal e abre o detalhe no JobMatch",async ({page})=>{
+  const linkedin = {...fixtureJob,id:"linkedin:123",externalId:"123",source:"linkedin",title:"Analista de Dados",
+    company:"Empresa LinkedIn",sourceUrl:"https://br.linkedin.com/jobs/view/analista-123",
+    applicationUrl:"https://br.linkedin.com/jobs/view/analista-123"};
+  await page.route("**/api/jobs/search?*",async route=>{
+    await route.fulfill({json:{
+      jobs:[fixtureJob,{...linkedin,description:""}],
+      next:null,snapshot:"fixture",boards:[],partial:false,
+    }});
+  });
+  await page.route("**/api/jobs/linkedin*",route=>route.fulfill({json:{job:linkedin}}));
   await page.goto("/vagas");
-  await page.getByRole("searchbox").fill("Engenharia de Dados & BI");
-  await page.getByLabel("Cargo desejado").fill("Analista");
-  await page.getByLabel("Cidade",{exact:true}).fill("São Paulo");
   const search = page.getByRole("search",{name:"Busca de vagas"});
-  await search.getByLabel("Onde buscar").selectOption("linkedin");
-  await search.getByLabel("Tempo de publicação").selectOption("week");
-  const [popup] = await Promise.all([page.waitForEvent("popup"),search.getByRole("button",{name:"Buscar no LinkedIn em nova aba"}).click()]);
-  await popup.waitForLoadState();
-  const target = new URL(popup.url());
-  expect(target.origin+target.pathname).toBe("https://www.linkedin.com/jobs/search/");
-  expect(target.searchParams.get("keywords")).toBe("Analista Engenharia de Dados & BI");
-  expect(target.searchParams.get("location")).toBe("São Paulo");
-  expect(target.searchParams.get("f_TPR")).toBe("r604800");
-  await popup.close();
+  await expect(search.getByLabel("Onde buscar")).toHaveCount(0);
+  const list = page.getByRole("region",{name:"Resultados"});
+  await expect(list.getByRole("link",{name:fixtureJob.title})).toBeVisible();
+  await expect(list.getByRole("link",{name:linkedin.title})).toBeVisible();
+  const request = page.waitForRequest(request=>new URL(request.url()).searchParams.get("keywords")==="Analista de Dados");
+  await search.getByRole("searchbox").fill("Analista de Dados");
+  await search.getByRole("button",{name:"Buscar",exact:true}).click();
+  await request;
+  await expect(list.getByRole("link",{name:fixtureJob.title})).toHaveCount(0);
+  await list.getByRole("link",{name:linkedin.title}).click();
+  await expect(page.getByRole("heading",{name:linkedin.title,level:1})).toBeVisible();
+  await expect(page.getByText(linkedin.description,{exact:true})).toBeVisible();
+  await expect(page.getByRole("link",{name:"Candidatar-se",exact:true})).toHaveAttribute("href",linkedin.applicationUrl);
 });
 
 test("filtra o catálogo pelo tempo de publicação na mesma barra de busca",async ({page})=>{

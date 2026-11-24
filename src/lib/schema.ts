@@ -19,7 +19,8 @@ export const emptyResume: ParsedResume = {
 };
 
 export const providers = ["greenhouse", "lever", "ashby"] as const;
-export const sourceNames = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", manual: "Análise manual" };
+export const jobSources = [...providers, "linkedin"] as const;
+export const sourceNames = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", linkedin: "LinkedIn", manual: "Análise manual" };
 export const modes = ["remote", "hybrid", "onsite", "unknown"] as const;
 export const modeNames = {remote:"Remoto", hybrid:"Híbrido", onsite:"Presencial", unknown:"Modalidade não informada"};
 export const seniorities = ["intern", "junior", "mid", "senior", "lead"] as const;
@@ -45,7 +46,7 @@ export const preferencesSchema = z.object({
   salaryInterval: z.enum(salaryIntervals).or(z.literal("")).default(""),
   publicationPeriod: z.enum(publicationPeriods).or(z.literal("")).default(""),
   language: z.enum(["pt","en","es","fr","de","it","ja","zh"]).or(z.literal("")).default(""),
-  sources: z.array(z.enum(providers)).max(3).default([]),
+  sources: z.array(z.enum(jobSources)).max(jobSources.length).default([]),
   minMatch: z.number().int().min(0).max(100).default(0),
 });
 export type Preferences = z.infer<typeof preferencesSchema>;
@@ -53,7 +54,7 @@ export const emptyPreferences = preferencesSchema.parse({});
 
 export const jobSchema = z.object({
   id: z.string().min(1).max(300),
-  source: z.enum([...providers, "manual"]),
+  source: z.enum([...jobSources, "manual"]),
   externalId: z.string().min(1).max(220),
   title: z.string().min(1).max(300),
   company: z.string().min(1).max(300),

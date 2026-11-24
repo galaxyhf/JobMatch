@@ -154,6 +154,10 @@ const normalizePosting = {greenhouse,lever,ashby};
 export function normalizeJob(board: Board, input: unknown): Job | null {
   const row = normalizePosting[board.source](input);
   if (!row) return null;
+  return jobFromPosting(board.source,`${board.source}:${board.region}:${board.slug.toLowerCase()}:${row.externalId}`,board.company,row);
+}
+
+export function jobFromPosting(provider: Exclude<Job["source"],"manual">, id: string, company: string, row: Posting): Job | null {
   const source = safeExternalUrl(row.sourceUrl);
   const application = row.applicationUrl ? safeExternalUrl(row.applicationUrl) : source;
   if (!source || !application) return null;
@@ -164,8 +168,7 @@ export function normalizeJob(board: Board, input: unknown): Job | null {
   const description = row.description.slice(0,60_000);
   const content = contentFields(title,description,location,country,row.mode,countries);
   const job = jobSchema.safeParse({
-    id:`${board.source}:${board.region}:${board.slug.toLowerCase()}:${row.externalId}`,
-    source:board.source,externalId:row.externalId,title,company:board.company,location:location || null,country,
+    id,source:provider,externalId:row.externalId,title,company:compact(company).slice(0,300),location:location || null,country,
     description,publishedAt:row.publishedAt ?? null,applicationUrl:application.href,sourceUrl:source.href,
     employmentType:employmentIn(row.employment ?? "",description)?.slice(0,300) ?? null,
     ...(row.salary ?? missingSalary),...content,

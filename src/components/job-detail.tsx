@@ -14,14 +14,14 @@ import { CompanyMark, MatchIndicator } from "./job-card";
 import { useSession } from "./session";
 import { Button } from "./ui/button";
 
-const catalogId = /^(greenhouse|lever|ashby):(global|eu):[a-z0-9_-]+:[a-z0-9-]+$/;
+const catalogId = /^(?:(greenhouse|lever|ashby):(global|eu):[a-z0-9_-]+:[a-z0-9-]+|linkedin:\d{1,18})$/;
 
 export function useJob(id:string) {
   const {selected} = useSession();
   const existing = selected[id];
   const query = useQuery({
     queryKey:["jobs","detail",id],
-    enabled:catalogId.test(id) && (!existing || (existing.source==="greenhouse" && !existing.salaryCurrency)),
+    enabled:catalogId.test(id) && (!existing || (existing.source==="greenhouse" && !existing.salaryCurrency) || (existing.source==="linkedin" && !existing.description)),
     queryFn:({signal})=>requestJson<{job:Job}>(`/api/jobs/${encodeURIComponent(id)}`,{signal}),
   });
   return {job:query.data?.job ?? existing, pending:query.isLoading, error:query.error, retry:query.refetch};

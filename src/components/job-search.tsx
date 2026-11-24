@@ -7,7 +7,6 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, requestJson } from "@/lib/client";
 import { passesFilters, sortResults, type SortOption } from "@/lib/jobs/filters";
-import { linkedinSearchUrl } from "@/lib/jobs/linkedin";
 import type { SearchPage, SearchResponse } from "@/lib/jobs/providers";
 import { compareResume } from "@/lib/matching";
 import { emptyPreferences, publicationPeriodNames, publicationPeriods, sourceNames, type Preferences } from "@/lib/schema";
@@ -19,8 +18,21 @@ import { Button } from "./ui/button";
 
 const pageSize = 10;
 
-async function loadCatalog(sources: Preferences["sources"], signal: AbortSignal): Promise<SearchResponse> {
-  const params = new URLSearchParams(sources.map(source=>["source",source]));
+function catalogParams(filters: Preferences) {
+  const params = new URLSearchParams([...filters.sources].sort().map(source=>["source",source]));
+  if (filters.sources.length && !filters.sources.includes("linkedin")) return params.toString();
+  for (const key of ["keywords","role","city","company","publicationPeriod"] as const) {
+    const value = filters[key].trim();
+    if (value) params.set(key,value);
+  }
+  for (const [key,values] of [["country",filters.countries],["technology",filters.technologies],["workMode",filters.workModes]] as const) {
+    for (const value of [...values].sort()) params.append(key,value);
+  }
+  return params.toString();
+}
+
+async function loadCatalog(search: string, signal: AbortSignal): Promise<SearchResponse> {
+  const params = new URLSearchParams(search);
   const first = await requestJson<SearchPage>(`/api/jobs/search?${params}`,{signal});
   const jobs = [...first.jobs];
   let cursor = first.next;
@@ -75,11 +87,11 @@ function CatalogSearch() {
   const [sort,setSort] = useState<SortOption>("match");
   const [visible,setVisible] = useState(pageSize);
   const [filters,applyFilters] = useDebounced(preferences,250);
-  const [destination,setDestination] = useState<"catalog"|"linkedin">("catalog");
-  const sourceKeys = [...filters.sources].sort();
+  const currentSearch = catalogParams(preferences);
+  const [search,applySearch] = useDebounced(currentSearch,650);
   const query = useQuery({
-    queryKey:["jobs","catalog",...sourceKeys],
-    queryFn:({signal})=>loadCatalog(sourceKeys,signal),
+    queryKey:["jobs","catalog",search],
+    queryFn:({signal})=>loadCatalog(search,signal),
     retry:(attempt,error)=>attempt===0 && error instanceof ApiError && error.code==="CATALOG_CHANGED",
     retryDelay:0,
     placeholderData:keepPreviousData,
@@ -103,6 +115,7 @@ function CatalogSearch() {
     setVersion(previous=>previous+1);
   }
 
+  const loading = query.isPending || (!results.length && (search!==currentSearch || (query.isFetching && query.isPlaceholderData)));
   const failures = query.data?.boards.filter(board=>board.status!=="ok") ?? [];
   const allOffline = Boolean(query.data?.boards.length && query.data.boards.every(board=>board.status==="error"));
 
@@ -110,11 +123,8 @@ function CatalogSearch() {
     <>
       <form className="search-bar" role="search" aria-label="Busca de vagas" onSubmit={event=>{
         event.preventDefault();
-        if (destination==="linkedin") {
-          window.open(linkedinSearchUrl(preferences),"_blank","noopener,noreferrer");
-          return;
-        }
         applyFilters(preferences);
+        applySearch(currentSearch);
         setVisible(pageSize);
       }}>
         <div className="search-input">
@@ -124,22 +134,19 @@ function CatalogSearch() {
           {preferences.keywords && <Button variant="ghost" size="icon" aria-label="Limpar pesquisa" onClick={()=>update({...preferences,keywords:""})}><X size={17}/></Button>}
         </div>
         <div className="search-options">
-          <select aria-label="Onde buscar" value={destination} onChange={e=>setDestination(e.target.value==="linkedin" ? "linkedin" : "catalog")}>
-            <option value="catalog">JobMatch</option><option value="linkedin">LinkedIn</option>
-          </select>
           <select aria-label="Tempo de publicação" value={preferences.publicationPeriod}
             onChange={e=>update({...preferences,publicationPeriod:e.target.value as Preferences["publicationPeriod"]})}>
             <option value="">Qualquer data</option>
             {publicationPeriods.map(period=><option key={period} value={period}>{publicationPeriodNames[period]}</option>)}
           </select>
-          <Button size="sm" type="submit" aria-label={destination==="linkedin" ? "Buscar no LinkedIn em nova aba" : undefined}>Buscar</Button>
+          <Button size="sm" type="submit">Buscar</Button>
         </div>
       </form>
       <div className="results-layout">
         <JobFilters value={preferences} onChange={update} version={version} onClear={()=>setVersion(previous=>previous+1)}/>
         <section className="results-main" aria-label="Resultados">
           <div className="result-tools">
-            <span role="status" aria-live="polite">{query.isPending ? "Consultando fontes…" : query.isError || allOffline ? "Busca indisponível" :
+            <span role="status" aria-live="polite">{loading ? "Consultando fontes…" : query.isError || allOffline ? "Busca indisponível" :
               <><strong>{results.length.toLocaleString("pt-BR")}</strong> {results.length===1 ? "vaga encontrada" : "vagas encontradas"}</>}</span>
             <label className="sort-label"><span>Ordenar por</span>
               <select aria-label="Ordenar por" value={sort} onChange={e=>{setSort(e.target.value as SortOption);setVisible(pageSize);}}>
@@ -152,7 +159,7 @@ function CatalogSearch() {
             <AlertCircle size={18}/>
             <div>
               <strong>{allOffline ? "Nenhuma fonte respondeu" : "Algumas fontes estão indisponíveis"}</strong>
-              <p>{failures.map(board=>`${board.company} (${sourceNames[board.source]}${board.status==="stale" ? ", cache recente" : ""})`).join(" · ")}</p>
+              <p>{failures.map(board=>`${board.source==="linkedin" ? sourceNames.linkedin : `${board.company} (${sourceNames[board.source]})`}${board.status==="stale" ? " (cache recente)" : ""}`).join(" · ")}</p>
               <Button size="sm" variant="outline" disabled={query.isFetching} onClick={()=>query.refetch()}>{query.isFetching ? "Tentando…" : "Tentar novamente"}</Button>
             </div>
           </div>}
@@ -161,7 +168,7 @@ function CatalogSearch() {
           {!resume && !query.isPending && !allOffline && !query.isError && <div className="callout resume-reminder">
             <FileText size={18}/><p><Link href="/curriculo">Confirme seu currículo</Link> para ver a compatibilidade de cada vaga.</p>
           </div>}
-          {query.isPending ? <SearchSkeleton/> : query.isError && !query.data ?
+          {loading ? <SearchSkeleton/> : query.isError && !query.data ?
             <div className="empty-state panel"><AlertCircle size={30}/><h2>Não foi possível consultar as vagas</h2>
               <p>{query.error.message}</p><Button onClick={()=>query.refetch()}>Tentar novamente</Button></div>
             : results.length ? <>

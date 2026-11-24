@@ -32,6 +32,9 @@ importers:
       html-to-text:
         specifier: ^9.0.5
         version: 9.0.5
+      htmlparser2:
+        specifier: 8.0.2
+        version: 8.0.2
       lucide-react:
         specifier: latest
         version: 1.77.0(@types/react@19.3.0)(react@19.3.1)

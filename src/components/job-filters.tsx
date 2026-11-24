@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { emptyPreferences, employmentNames, languageNames, modeNames, providers, salaryIntervals, seniorities, seniorityNames, sourceNames, type Preferences } from "@/lib/schema";
+import { emptyPreferences, employmentNames, languageNames, modeNames, jobSources, salaryIntervals, seniorities, seniorityNames, sourceNames, type Preferences } from "@/lib/schema";
 import { countryName, countryOptions } from "@/lib/terms";
 import { Button } from "./ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "./ui/dialog";
@@ -69,7 +69,7 @@ function FilterFields({value,onChange,clear}:{value:Preferences;onChange:(value:
       </select></label>
       <fieldset className="field check-group">
         <legend>Fonte</legend>
-        {providers.map(key=><label className="check" key={key}><input type="checkbox" checked={value.sources.includes(key)} onChange={()=>patch("sources",toggle(value.sources,key))}/>{sourceNames[key]}</label>)}
+        {jobSources.map(key=><label className="check" key={key}><input type="checkbox" checked={value.sources.includes(key)} onChange={()=>patch("sources",toggle(value.sources,key))}/>{sourceNames[key]}</label>)}
       </fieldset>
       <label className="field">Compatibilidade mínima <strong>{value.minMatch}%</strong>
         <input type="range" min={0} max={100} step={5} value={value.minMatch}
